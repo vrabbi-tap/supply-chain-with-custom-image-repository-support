@@ -1,0 +1,98 @@
+apiVersion: carto.run/v1alpha1
+kind: ClusterImageTemplate
+metadata:
+  name: terasky-kaniko-template
+spec:
+  healthRule:
+    singleConditionType: Ready
+  imagePath: .status.outputs.image-ref
+  params:
+  - default: default
+    name: serviceAccount
+  - name: registry
+    default: {}
+  - default: ./Dockerfile
+    name: dockerfile
+  - default: ./
+    name: docker_build_context
+  - name: docker_build_extra_args
+    default: {}
+  - name: image_repository
+    default: PLACEHOLDER
+  ytt: |
+    #@ load("@ytt:data", "data")
+
+    #@ def merge_labels(fixed_values):
+    #@   labels = {}
+    #@   if hasattr(data.values.workload.metadata, "labels"):
+    #@     labels.update(data.values.workload.metadata.labels)
+    #@   end
+    #@   labels.update(fixed_values)
+    #@   return labels
+    #@ end
+
+    #@ def param(key):
+    #@   if not key in data.values.params:
+    #@     return None
+    #@   end
+    #@   return data.values.params[key]
+    #@ end
+
+    #@ def image():
+    #@   if data.values.params.image_repository == "PLACEHOLDER":
+    #@     return "/".join([
+    #@       data.values.params.registry.server,
+    #@       data.values.params.registry.repository,
+    #@       "-".join([
+    #@         data.values.workload.metadata.name,
+    #@         data.values.workload.metadata.namespace,
+    #@       ])
+    #@      ])
+    #@   else:
+    #@     return "/".join([
+    #@       data.values.params.registry.server,
+    #@       data.values.params.image_repository,
+    #@       "-".join([
+    #@         data.values.workload.metadata.name,
+    #@         data.values.workload.metadata.namespace,
+    #@       ])
+    #@     ])
+    #@   end
+    #@ end
+
+    #@ def ca_cert_data():
+    #@   if "ca_cert_data" not in param("registry"):
+    #@     return ""
+    #@   end
+    #@
+    #@   return param("registry")["ca_cert_data"]
+    #@ end
+
+    ---
+    apiVersion: carto.run/v1alpha1
+    kind: Runnable
+    metadata:
+      name: #@ data.values.workload.metadata.name + "-build"
+      labels: #@ merge_labels({ "app.kubernetes.io/component": "build" })
+    spec:
+      #@ if/end hasattr(data.values.workload.spec, "serviceAccountName"):
+      serviceAccountName: #@ data.values.workload.spec.serviceAccountName
+
+      runTemplateRef:
+        name: kaniko-runtemplate
+
+      inputs:
+        serviceAccount: #@ data.values.params.serviceAccount
+        params:
+          - name: image
+            value: #@ image()
+          - name: source_tar
+            value: #@ data.values.source.url
+          - name: dockerfile
+            value: #@ data.values.params.dockerfile
+          - name: context
+            value: #@ data.values.params.docker_build_context
+          - name: extra_args
+            value: #@ data.values.params.docker_build_extra_args
+          - name: ca_cert_data
+            value: #@ ca_cert_data()
