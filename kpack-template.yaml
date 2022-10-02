@@ -57,7 +57,9 @@ spec:
     #@     ])
     #@   end
     #@ end
-
+    
+    #@ revTag = #@ image() + ":" + data.values.source.revision.split("/")[1]
+    
     apiVersion: kpack.io/v1alpha2
     kind: Image
     metadata:
@@ -65,6 +67,8 @@ spec:
       labels: #@ merge_labels({ "app.kubernetes.io/component": "build" })
     spec:
       tag: #@ image()
+      additionalTags:
+      - #@ revTag
       serviceAccountName: #@ data.values.params.serviceAccount
       builder:
         kind: ClusterBuilder
